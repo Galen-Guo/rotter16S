@@ -1,0 +1,173 @@
+
+library("phyloseq")
+library("vegan")
+library("ape")
+library("ggplot2")
+library('ggrepel')
+library("gridExtra")
+library('ade4')
+library('Rtsne')
+library('dbscan')
+
+set.seed(20)
+
+map = read.table("map2019.txt", header =T)
+weight_unifrac = read.table("weighted_unifrac_DADA2.txt")
+w_pcoa_species = pcoa(weight_unifrac)
+
+### PCoA --> Envfit ##### 
+
+map_scores = w_pcoa_species$vectors
+col =rownames(map_scores)
+col =as.data.frame(col)
+map_scores = cbind(col, map_scores)
+map_scores = map_scores[order(col),]
+col2 =rownames(map_scores)
+map_scores2 = cbind(col2, map_scores)
+map = map[order(map$SampleID),]
+map = cbind(col2,map)
+map_scores_merged = merge(map,map_scores2, by="col2")
+map_del = map_scores_merged[,-c(1,2,4,5,6,30,32,35:ncol(map_scores_merged))]
+###map_del = map_scores_merged[,-c(1,2,3,5,6,9,10,12,18,19,58:60)]
+rownames(map_del) = col2
+
+ef1 = envfit(w_pcoa_species$vectors,map_del, perm = 999, na.rm =TRUE)
+ef1
+biplot(w_pcoa_species)
+plot(ef1)
+ef.df<-as.data.frame(ef1$vectors$arrows*sqrt(ef1$vectors$r)) #extracting vector
+ef.df = as.data.frame(scores(ef1, display = "vectors"))
+ef.df$effect<-rownames(ef.df)
+
+#e0ecf4
+pcoa_text_col = c("#ff9999", "#ff9999","#ff9999","#ff9999","#9ebcda", 
+                  "#9ebcda", "#ff9999", "#ff9999", "#ff9999", "#ff9999",
+                  "#9ebcda", "#ff9999", "#ff9999", "#9ebcda", "#ff9999",
+                  "#9ebcda", "#ff9999","#ff9999", "#ff9999", "#8856a7",
+                  "#ff9999", "#8856a7", "#ff9999", "#9ebcda","#ff9999",
+                  "#ff9999", "#ff9999")
+
+pcoa_linetype = c("dashed", "dashed","dashed","dashed","f1", 
+                  "f1", "dashed", "dashed", "dashed", "dashed",
+                  "f1", "dashed", "dashed", "f1", "dashed",
+                  "f1", "dashed","dashed", "dashed", "solid",
+                  "dashed", "solid", "dashed", "f1","dashed",
+                  "dashed", "dashed")
+
+
+cluster_col = c("#a6611a", "#dfc27d", "#80cdc1", "#018571")
+
+pcoa_unifrac_envfit = ggplot(xlab = "axis1", ylab = "axis2") +
+  scale_fill_discrete("") +
+  geom_segment(colour = pcoa_text_col, 
+               data = ef.df, 
+               aes(x = 0, 
+                   y = 0, 
+                   xend = scale(Axis.1), yend = scale(Axis.2)),
+               lineend = "round",
+               linetype = pcoa_linetype,
+               size = .75, 
+               arrow = arrow(length = unit(.1, "inches"))) + 
+  geom_text_repel(fontface = "italic", colour = pcoa_text_col, 
+                  data = ef.df,size = 5, 
+                  aes( x = scale(Axis.1), y = scale(Axis.2), label = effect)) +
+  geom_point( data = map_scores_merged, 
+              size = 5, shape = 21,
+              aes(x = scale(Axis.1), y = scale(Axis.2), fill = as.factor(cluster)) )+
+  labs(x = "PCoA 1: 24.8%", y = "PCoA 2: 15.1%", title = "Weight Unifrac PCoA with environmental vector")
+
+pcoa_unifrac_envfit+theme_Publication()
+
+####t-SNE -- H-DBSCAN #####
+
+tsne_rotter = Rtsne(weight_unifrac,is_distance = T, check_duplicates=FALSE, perplexity=7)
+
+#extract TSNE scores
+df_tsne_rotter  = data.frame(tsne_rotter$Y)
+rownames(df_tsne_rotter) = rownames(weight_unifrac)
+# Hierarchical DBSCAN
+
+df_tsne_rotter_cluster <- hdbscan(df_tsne_rotter,  minPts = 3)
+df_tsne_rotter_cluster
+### plot HDBSCAN
+plot(df_tsne_rotter, col=df_tsne_rotter_cluster$cluster+1, pch=20)
+plot(df_tsne_rotter_cluster$hc)
+
+## extract cluster info from HDBSCAN
+cluster = df_tsne_rotter_cluster$cluster
+rotter_clust = as.data.frame(cluster)
+rownames(rotter_clust) = rownames(weight_unifrac) 
+
+
+#format df for tsne scores with mapping data
+rownames(df_tsne_rotter) = rownames(weight_unifrac)
+df_tsne_rotter_plot = cbind(map, cluster, df_tsne_rotter)
+df_tsne_rotter_plot = df_tsne_rotter_plot[,-4]
+
+TSNE_cluster_graph = ggplot(data = df_tsne_rotter_plot, aes(x =df_tsne_rotter_plot$X1,y = df_tsne_rotter_plot$X2, colour = as.factor(df_tsne_rotter_plot$cluster))) +
+  geom_point(data = df_tsne_rotter_plot,shape = 21, size =5, colour = "black", aes(x = df_tsne_rotter_plot$X1,y = df_tsne_rotter_plot$X2,fill = as.factor(cluster)))+    
+  labs(x = "", y = "", title = "T-SNE", fill = "", color = "") +
+  stat_ellipse(level = 0.95,show.legend = FALSE)
+TSNE_cluster_graph + theme_Publication()
+
+#### Publication quality fig #####
+fig1 = grid.arrange(pcoa_unifrac_envfit +theme_Publication(),TSNE_cluster_graph+theme_Publication(),ncol=2)
+
+
+### generate r2 and p value table + export to csv
+envfit_pvalues = as.data.frame(ef1$vectors$pvals)
+envfit_factor_pvalues = as.data.frame(ef1$factors$pvals)
+envfit_factor_r = as.data.frame(ef1$factors$r)
+envfit_r = as.data.frame(ef1$vectors$r)
+
+
+envfit_vector = cbind(envfit_r,envfit_pvalues)
+enffit_factor= cbind(envfit_factor_r,envfit_factor_pvalues)
+
+
+write.csv(envfit_vector, file = "envfitPCoA_vector_pvalues.csv")
+write.csv(enffit_factor, file = "envfitPCoA_factor_pvalues.csv")
+
+
+###print publication parameters ####
+
+theme_Publication <- function(base_size=20, base_family="helvetica") {
+  library(grid)
+  library(ggthemes)
+  (theme_foundation(base_size=base_size, base_family=base_family)
+    + theme(plot.title = element_text(face = "bold",
+                                      size = rel(1.2), hjust = 0.5),
+            text = element_text(),
+            panel.background = element_rect(colour = NA),
+            plot.background = element_rect(colour = NA),
+            panel.border = element_rect(colour = NA),
+            axis.title = element_text(face = "bold",size = rel(.80)),
+            axis.title.y = element_text(angle=90),
+            axis.title.x = element_text(),
+            axis.text = element_text(), 
+            axis.line = element_line(colour="black"),
+            axis.ticks = element_line(),
+            panel.grid.major =  element_blank(),
+            panel.grid.minor = element_blank(),
+            legend.key = element_rect(colour = NA),
+            legend.position = "bottom",
+            legend.key.size= unit(0.2, "cm"),
+            legend.margin = unit(0, "cm"),
+            legend.title = element_text(face="italic"),
+            plot.margin=unit(c(15,5,5,5),"mm")
+    ))
+  
+}
+
+scale_fill_Publication <- function(...){
+  library(scales)
+  discrete_scale("fill","Publication",manual_pal(values = c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#a6cee3","#fb9a99","#984ea3","#ffff33")), ...)
+  
+}
+
+scale_colour_Publication <- function(...){
+  library(scales)
+  discrete_scale("colour","Publication",manual_pal(values = c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#a6cee3","#fb9a99","#984ea3","#ffff33")), ...)
+  
+}
+
