@@ -22,4 +22,4 @@ Email: apoulain@uottawa.ca
 
 Code line for statistical analysis of river otter data
 
-Environmental variable file used for statistical analysis
+Environmental variable file used for statistical analysis --> Otter_mapping.txt
