@@ -20,6 +20,6 @@ Tel: (1) 613-562-5800 ext. 2373 fax. (1) 613-562-5486
 Email: apoulain@uottawa.ca
 
 
-Code line for statistical analysis of river otter data
+R script statistical analysis of river otter data --> PCoA + EnvFit and T-SNE + H-DBSCAN
 
 Environmental variable file used for statistical analysis --> Otter_mapping.txt
